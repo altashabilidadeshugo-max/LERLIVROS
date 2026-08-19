@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Leitor de PDF Web</title>
+    
+    <!-- Importando o PDF.js via CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+
+    <style>
+        :root {
+            --bg-color: #1e1e1e;
+            --topbar-bg: #2d2d2d;
+            --text-color: #ffffff;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Barra Superior */
+        .topbar {
+            background-color: var(--topbar-bg);
+            padding: 15px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.5);
+            z-index: 10;
+        }
+
+        .topbar h1 {
+            margin: 0;
+            font-size: 1.2rem;
+        }
+
+        /* Botão de Upload Customizado */
+        .upload-btn-wrapper {
+            position: relative;
+            overflow: hidden;
+            display: inline-block;
+        }
+
+        .btn {
+            border: none;
+            color: white;
+            background-color: var(--accent);
+            padding: 8px 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: bold;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .btn:hover { background-color: var(--accent-hover); }
+
+        .upload-btn-wrapper input[type=file] {
+            font-size: 100px;
+            position: absolute;
+            left: 0;
+            top: 0;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        /* Área do PDF */
+        #pdf-container {
+            flex: 1;
+            overflow: auto;
+            display: flex;
+            justify-content: center;
+            padding: 20px;
+            align-items: flex-start; /* Para a página não cortar no topo */
+        }
+
+        canvas {
+            background-color: white;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            max-width: 100%;
+            height: auto !important; /* Mantém a proporção no celular */
+            border-radius: 4px;
+        }
+
+        /* Controles Inferiores (Passar página) */
+        .controls {
+            background-color: var(--topbar-bg);
+            padding: 15px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            box-shadow: 0 -2px 10px rgba(0,0,0,0.5);
+        }
+
+        .controls button {
+            background-color: #4b5563;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 1rem;
+            cursor: pointer;
+            transition: 0.2s;
+        }
+
+        .controls button:hover:not(:disabled) { background-color: #6b7280; }
+        .controls button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .page-info { font-size: 1rem; font-weight: 500; }
+
+        /* Mensagem Inicial */
+        #empty-state {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: #9ca3af;
+        }
+
+        /* Responsivo para celulares pequenos */
+        @media (max-width: 600px) {
+            .topbar { flex-direction: column; gap: 15px; text-align: center; }
+            .controls button { padding: 10px 15px; font-size: 0.9rem; }
+            #pdf-container { padding: 10px; }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="topbar">
+        <h1>📚 Leitor de PDF</h1>
+        <div class="upload-btn-wrapper">
+            <button class="btn">Abrir um PDF</button>
+            <input type="file" id="file-upload" accept="application/pdf" />
+        </div>
+    </div>
+
+    <div id="empty-state">
+        <h2>Nenhum arquivo aberto</h2>
+        <p>Clique em "Abrir um PDF" lá em cima para começar a ler.</p>
+    </div>
+
+    <div id="pdf-container" style="display: none;">
+        <canvas id="pdf-render"></canvas>
+    </div>
+
+    <div class="controls" style="display: none;" id="controls-bar">
+        <button id="prev-page">⬅ Anterior</button>
+        <span class="page-info">Página <span id="page-num">0</span> de <span id="page-count">0</span></span>
+        <button id="next-page">Próxima ➡</button>
+    </div>
+
+    <script>
+        // Configurando o Worker do PDF.js
+        const pdfjsLib = window['pdfjs-dist/build/pdf'];
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+        let pdfDoc = null,
+            pageNum = 1,
+            pageIsRendering = false,
+            pageNumIsPending = null;
+
+        const scale = 1.5, // Resolução/Zoom da página
+              canvas = document.getElementById('pdf-render'),
+              ctx = canvas.getContext('2d'),
+              emptyState = document.getElementById('empty-state'),
+              pdfContainer = document.getElementById('pdf-container'),
+              controlsBar = document.getElementById('controls-bar');
+
+        // Função para renderizar a página
+        const renderPage = num => {
+            pageIsRendering = true;
+
+            // Pega a página
+            pdfDoc.getPage(num).then(page => {
+                const viewport = page.getViewport({ scale });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+
+                const renderCtx = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+
+                page.render(renderCtx).promise.then(() => {
+                    pageIsRendering = false;
+
+                    if (pageNumIsPending !== null) {
+                        renderPage(pageNumIsPending);
+                        pageNumIsPending = null;
+                    }
+                });
+
+                // Atualiza contadores
+                document.getElementById('page-num').textContent = num;
+                
+                // Desabilita botões se estiver na primeira ou última página
+                document.getElementById('prev-page').disabled = num <= 1;
+                document.getElementById('next-page').disabled = num >= pdfDoc.numPages;
+            });
+        };
+
+        // Checa páginas pendentes
+        const queueRenderPage = num => {
+            if (pageIsRendering) {
+                pageNumIsPending = num;
+            } else {
+                renderPage(num);
+            }
+        };
+
+        // Página Anterior
+        const showPrevPage = () => {
+            if (pageNum <= 1) return;
+            pageNum--;
+            queueRenderPage(pageNum);
+        };
+
+        // Próxima Página
+        const showNextPage = () => {
+            if (pageNum >= pdfDoc.numPages) return;
+            pageNum++;
+            queueRenderPage(pageNum);
+        };
+
+        // Carregar PDF pelo input de arquivo
+        document.getElementById('file-upload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file.type !== 'application/pdf') {
+                alert('Por favor, escolha um arquivo PDF válido.');
+                return;
+            }
+
+            const fileReader = new FileReader();
+            fileReader.onload = function() {
+                const typedarray = new Uint8Array(this.result);
+
+                // Carrega o PDF na biblioteca
+                pdfjsLib.getDocument(typedarray).promise.then(pdfDoc_ => {
+                    pdfDoc = pdfDoc_;
+                    
+                    // Atualiza a UI
+                    emptyState.style.display = 'none';
+                    pdfContainer.style.display = 'flex';
+                    controlsBar.style.display = 'flex';
+                    document.getElementById('page-count').textContent = pdfDoc.numPages;
+                    
+                    pageNum = 1;
+                    renderPage(pageNum);
+                }).catch(err => {
+                    alert('Erro ao carregar o PDF: ' + err.message);
+                });
+            };
+            fileReader.readAsArrayBuffer(file);
+        });
+
+        // Eventos de clique nos botões
+        document.getElementById('prev-page').addEventListener('click', showPrevPage);
+        document.getElementById('next-page').addEventListener('click', showNextPage);
+    </script>
+</body>
+</html>
