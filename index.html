@@ -3,18 +3,22 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Leitor de PDF Web</title>
+    <title>Leitor de PDF Avançado</title>
     
-    <!-- Importando o PDF.js via CDN -->
+    <!-- PDF.js via CDN -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    
+    <!-- Ícones FontAwesome (para botões bonitinhos) -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
 
     <style>
         :root {
-            --bg-color: #1e1e1e;
+            --bg-color: #1a1a1a;
             --topbar-bg: #2d2d2d;
             --text-color: #ffffff;
             --accent: #3b82f6;
             --accent-hover: #2563eb;
+            --controls-bg: #2d2d2d;
         }
 
         body {
@@ -26,12 +30,13 @@
             display: flex;
             flex-direction: column;
             height: 100vh;
+            overflow: hidden; /* Evita rolagem do corpo */
         }
 
         /* Barra Superior */
         .topbar {
             background-color: var(--topbar-bg);
-            padding: 15px 20px;
+            padding: 10px 20px;
             display: flex;
             justify-content: space-between;
             align-items: center;
@@ -39,10 +44,8 @@
             z-index: 10;
         }
 
-        .topbar h1 {
-            margin: 0;
-            font-size: 1.2rem;
-        }
+        .topbar h1 { margin: 0; font-size: 1.1rem; }
+        .topbar h1 i { color: var(--accent); margin-right: 8px; }
 
         /* Botão de Upload Customizado */
         .upload-btn-wrapper {
@@ -51,19 +54,19 @@
             display: inline-block;
         }
 
-        .btn {
+        .btn-upload {
             border: none;
             color: white;
             background-color: var(--accent);
-            padding: 8px 20px;
+            padding: 8px 16px;
             border-radius: 8px;
-            font-size: 1rem;
+            font-size: 0.9rem;
             font-weight: bold;
             cursor: pointer;
             transition: 0.2s;
         }
 
-        .btn:hover { background-color: var(--accent-hover); }
+        .btn-upload:hover { background-color: var(--accent-hover); }
 
         .upload-btn-wrapper input[type=file] {
             font-size: 100px;
@@ -80,43 +83,58 @@
             overflow: auto;
             display: flex;
             justify-content: center;
-            padding: 20px;
-            align-items: flex-start; /* Para a página não cortar no topo */
+            padding: 15px;
+            align-items: flex-start; /* Essencial para a rotação */
+            /* Garante que o canvas possa se expandir conforme necessário */
         }
 
+        /* Canvas centralizado com borda e sombra */
         canvas {
             background-color: white;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            box-shadow: 0 4px 15px rgba(0,0,0,0.4);
             max-width: 100%;
             height: auto !important; /* Mantém a proporção no celular */
             border-radius: 4px;
+            display: none; /* Escondido no início */
         }
 
-        /* Controles Inferiores (Passar página) */
+        /* Controles Inferiores */
         .controls {
-            background-color: var(--topbar-bg);
-            padding: 15px;
+            background-color: var(--controls-bg);
+            padding: 10px 15px;
             display: flex;
             justify-content: center;
             align-items: center;
-            gap: 15px;
+            gap: 12px;
             box-shadow: 0 -2px 10px rgba(0,0,0,0.5);
+            flex-wrap: wrap; /* Para celular */
         }
 
-        .controls button {
+        .controls-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .btn-control {
             background-color: #4b5563;
             color: white;
             border: none;
-            padding: 10px 20px;
+            padding: 10px 18px;
             border-radius: 8px;
             font-size: 1rem;
             cursor: pointer;
             transition: 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 6px;
         }
 
-        .controls button:hover:not(:disabled) { background-color: #6b7280; }
-        .controls button:disabled { opacity: 0.5; cursor: not-allowed; }
-        .page-info { font-size: 1rem; font-weight: 500; }
+        .btn-control:hover:not(:disabled) { background-color: #6b7280; }
+        .btn-control:disabled { opacity: 0.4; cursor: not-allowed; }
+        .btn-rotate { background-color: #1f2937; } /* Cor diferente para rotação */
+
+        .page-info { font-size: 0.95rem; font-weight: 500; }
 
         /* Mensagem Inicial */
         #empty-state {
@@ -126,12 +144,18 @@
             transform: translate(-50%, -50%);
             text-align: center;
             color: #9ca3af;
+            width: 80%;
+            max-width: 400px;
         }
+        #empty-state i { font-size: 4rem; color: #4b5563; margin-bottom: 20px; }
 
         /* Responsivo para celulares pequenos */
         @media (max-width: 600px) {
-            .topbar { flex-direction: column; gap: 15px; text-align: center; }
-            .controls button { padding: 10px 15px; font-size: 0.9rem; }
+            .topbar { flex-direction: column; gap: 10px; text-align: center; padding: 15px; }
+            .topbar h1 { font-size: 1rem; }
+            .controls { padding: 15px 10px; gap: 8px; flex-direction: column; }
+            .controls-group { width: 100%; justify-content: center; }
+            .btn-control { padding: 10px; font-size: 0.9rem; flex: 1; }
             #pdf-container { padding: 10px; }
         }
     </style>
@@ -139,39 +163,50 @@
 <body>
 
     <div class="topbar">
-        <h1>📚 Leitor de PDF</h1>
+        <h1><i class="fas fa-file-pdf"></i> Leitor de PDF Avançado</h1>
         <div class="upload-btn-wrapper">
-            <button class="btn">Abrir um PDF</button>
+            <button class="btn-upload"><i class="fas fa-folder-open"></i> Abrir Arquivo</button>
             <input type="file" id="file-upload" accept="application/pdf" />
         </div>
     </div>
 
     <div id="empty-state">
+        <i class="fas fa-file-invoice"></i>
         <h2>Nenhum arquivo aberto</h2>
-        <p>Clique em "Abrir um PDF" lá em cima para começar a ler.</p>
+        <p>Clique em "Abrir Arquivo" acima ou arraste um PDF para começar a ler e rotacionar.</p>
     </div>
 
-    <div id="pdf-container" style="display: none;">
+    <div id="pdf-container">
         <canvas id="pdf-render"></canvas>
     </div>
 
     <div class="controls" style="display: none;" id="controls-bar">
-        <button id="prev-page">⬅ Anterior</button>
-        <span class="page-info">Página <span id="page-num">0</span> de <span id="page-count">0</span></span>
-        <button id="next-page">Próxima ➡</button>
+        <!-- Grupo de Navegação -->
+        <div class="controls-group">
+            <button id="prev-page" class="btn-control"><i class="fas fa-arrow-left"></i> Anterior</button>
+            <span class="page-info">Pág <span id="page-num">0</span> de <span id="page-count">0</span></span>
+            <button id="next-page" class="btn-control">Próxima <i class="fas fa-arrow-right"></i></button>
+        </div>
+        
+        <!-- Grupo de Rotação -->
+        <div class="controls-group">
+            <button id="rotate-left" class="btn-control btn-rotate"><i class="fas fa-undo"></i> Virar p/ Esquerda</button>
+            <button id="rotate-right" class="btn-control btn-rotate">Virar p/ Direita <i class="fas fa-redo"></i></button>
+        </div>
     </div>
 
     <script>
-        // Configurando o Worker do PDF.js
+        // Configurando o Worker do PDF.js (essencial para performance)
         const pdfjsLib = window['pdfjs-dist/build/pdf'];
         pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
         let pdfDoc = null,
             pageNum = 1,
+            rotation = 0, // Novo: Rotação em graus
             pageIsRendering = false,
             pageNumIsPending = null;
 
-        const scale = 1.5, // Resolução/Zoom da página
+        const scale = 1.6, // Fator de escala base (pode precisar de ajuste automático)
               canvas = document.getElementById('pdf-render'),
               ctx = canvas.getContext('2d'),
               emptyState = document.getElementById('empty-state'),
@@ -184,7 +219,10 @@
 
             // Pega a página
             pdfDoc.getPage(num).then(page => {
-                const viewport = page.getViewport({ scale });
+                // Passa o parâmetro 'rotation' para a viewport
+                const viewport = page.getViewport({ scale, rotation });
+                
+                // Redimensiona o canvas com base na página E na rotação
                 canvas.height = viewport.height;
                 canvas.width = viewport.width;
 
@@ -193,6 +231,7 @@
                     viewport: viewport
                 };
 
+                // Renderiza
                 page.render(renderCtx).promise.then(() => {
                     pageIsRendering = false;
 
@@ -201,6 +240,9 @@
                         pageNumIsPending = null;
                     }
                 });
+
+                // Mostra o canvas
+                canvas.style.display = 'block';
 
                 // Atualiza contadores
                 document.getElementById('page-num').textContent = num;
@@ -220,24 +262,38 @@
             }
         };
 
-        // Página Anterior
+        // Funções de Navegação
         const showPrevPage = () => {
             if (pageNum <= 1) return;
             pageNum--;
             queueRenderPage(pageNum);
         };
 
-        // Próxima Página
         const showNextPage = () => {
             if (pageNum >= pdfDoc.numPages) return;
             pageNum++;
             queueRenderPage(pageNum);
         };
 
+        // Funções de Rotação (incremento de 90 graus)
+        const rotateLeft = () => {
+            rotation -= 90;
+            // Mantém no intervalo de 0-359 (opcional, mas limpo)
+            if (rotation <= -360) rotation = 0;
+            queueRenderPage(pageNum);
+        };
+
+        const rotateRight = () => {
+            rotation += 90;
+            // Mantém no intervalo de 0-359
+            if (rotation >= 360) rotation = 0;
+            queueRenderPage(pageNum);
+        };
+
         // Carregar PDF pelo input de arquivo
         document.getElementById('file-upload').addEventListener('change', function(e) {
             const file = e.target.files[0];
-            if (file.type !== 'application/pdf') {
+            if (!file || file.type !== 'application/pdf') {
                 alert('Por favor, escolha um arquivo PDF válido.');
                 return;
             }
@@ -252,11 +308,12 @@
                     
                     // Atualiza a UI
                     emptyState.style.display = 'none';
-                    pdfContainer.style.display = 'flex';
                     controlsBar.style.display = 'flex';
                     document.getElementById('page-count').textContent = pdfDoc.numPages;
                     
+                    // Reinicia estado
                     pageNum = 1;
+                    rotation = 0;
                     renderPage(pageNum);
                 }).catch(err => {
                     alert('Erro ao carregar o PDF: ' + err.message);
@@ -268,6 +325,8 @@
         // Eventos de clique nos botões
         document.getElementById('prev-page').addEventListener('click', showPrevPage);
         document.getElementById('next-page').addEventListener('click', showNextPage);
+        document.getElementById('rotate-left').addEventListener('click', rotateLeft);
+        document.getElementById('rotate-right').addEventListener('click', rotateRight);
     </script>
 </body>
 </html>
